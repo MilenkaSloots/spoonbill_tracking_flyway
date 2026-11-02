@@ -1,0 +1,46 @@
+value,clc_code,label1,label2,label3,colour
+1,111,Artificial surfaces,Urban fabric,Continuous urban fabric,#e6004d
+2,112,Artificial surfaces,Urban fabric,Discontinuous urban fabric,#ff0000
+3,121,Artificial surfaces,"Industrial, commercial and transport units",Industrial or commercial units,#cc4df2
+4,122,Artificial surfaces,"Industrial, commercial and transport units",Road and rail networks and associated land,#cc0000
+5,123,Artificial surfaces,"Industrial, commercial and transport units",Port areas,#e6cccc
+6,124,Artificial surfaces,"Industrial, commercial and transport units",Airports,#e6cce6
+7,131,Artificial surfaces,"Mine, dump and construction sites",Mineral extraction sites,#a600cc
+8,132,Artificial surfaces,"Mine, dump and construction sites",Dump sites,#a64d00
+9,133,Artificial surfaces,"Mine, dump and construction sites",Construction sites,#ff4dff
+10,141,Artificial surfaces,"Artificial, non-agricultural vegetated areas",Green urban areas,#ffa6ff
+11,142,Artificial surfaces,"Artificial, non-agricultural vegetated areas",Sport and leisure facilities,#ffe6ff
+12,211,Agricultural areas,Arable land,Non-irrigated arable land,#ffffa8
+13,212,Agricultural areas,Arable land,Permanently irrigated land,#ffff00
+14,213,Agricultural areas,Arable land,Rice fields,#e6e600
+15,221,Agricultural areas,Permanent crops,Vineyards,#e68000
+16,222,Agricultural areas,Permanent crops,Fruit trees and berry plantations,#f2a64d
+17,223,Agricultural areas,Permanent crops,Olive groves,#e6a600
+18,231,Agricultural areas,Pastures,Pastures,#e6e64d
+19,241,Agricultural areas,Heterogeneous agricultural areas,Annual crops associated with permanent crops,#ffe6a6
+20,242,Agricultural areas,Heterogeneous agricultural areas,Complex cultivation patterns,#ffe64d
+21,243,Agricultural areas,Heterogeneous agricultural areas,"Land principally occupied by agriculture, with significant areas of natural vegetation",#e6cc4d
+22,244,Agricultural areas,Heterogeneous agricultural areas,Agro-forestry areas,#f2cca6
+23,311,Forest and semi-natural areas,Forests,Broad-leaved forest,#80ff00
+24,312,Forest and semi-natural areas,Forests,Coniferous forest,#00a600
+25,313,Forest and semi-natural areas,Forests,Mixed forest,#4dff00
+26,321,Forest and semi-natural areas,Scrub and/or herbaceous vegetation,Natural grasslands,#ccf24d
+27,322,Forest and semi-natural areas,Scrub and/or herbaceous vegetation,Moors and heathland,#a6ff80
+28,323,Forest and semi-natural areas,Scrub and/or herbaceous vegetation,Sclerophyllous vegetation,#a6e64d
+29,324,Forest and semi-natural areas,Scrub and/or herbaceous vegetation,Transitional woodland-shrub,#a6f200
+30,331,Forest and semi-natural areas,Open spaces with little or no vegetation,"Beaches, dunes, sands",#e6e6e6
+31,332,Forest and semi-natural areas,Open spaces with little or no vegetation,Bare rocks,#cccccc
+32,333,Forest and semi-natural areas,Open spaces with little or no vegetation,Sparsely vegetated areas,#ccffcc
+33,334,Forest and semi-natural areas,Open spaces with little or no vegetation,Burnt areas,#000000
+34,335,Forest and semi-natural areas,Open spaces with little or no vegetation,Glaciers and perpetual snow,#a6e6cc
+35,411,Wetlands,Inland wetlands,Inland marshes,#a6a6ff
+36,412,Wetlands,Inland wetlands,Peat bogs,#4d4dff
+37,421,Wetlands,Maritime wetlands,Salt marshes,#ccccff
+38,422,Wetlands,Maritime wetlands,Salines,#e6e6ff
+39,423,Wetlands,Maritime wetlands,Intertidal flats,#a6a6e6
+40,511,Water bodies,Inland waters,Water courses,#00ccf2
+41,512,Water bodies,Inland waters,Water bodies,#80f2e6
+42,521,Water bodies,Marine waters,Coastal lagoons,#00ffa6
+43,522,Water bodies,Marine waters,Estuaries,#a6ffe6
+44,523,Water bodies,Marine waters,Sea and ocean,#e6f2ff
+48,999,No data,No data,NODATA,#ffffff

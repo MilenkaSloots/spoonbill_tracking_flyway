@@ -1,0 +1,10 @@
+/* BirdEyes house style for the Quarto (.qmd) version of the tutorial:
+   Tiller for headings (falls back to Georgia), Georgia for text */
+@import url("https://use.typekit.net/ttz0yqw.css");
+body { font-family: Georgia, serif; font-size: 15px; line-height: 1.55; }
+h1, h2, h3, h4, .title, .subtitle { font-family: "tiller", Georgia, serif; color: #1e4f1d; }
+h1.title { text-transform: uppercase; font-weight: 700; }
+h1:not(.title) { border-bottom: 2px solid #caeaa9; padding-bottom: 4px; margin-top: 40px; }
+h2 { margin-top: 32px; }
+.intermezzo { background: #f1f8e9; border-left: 6px solid #1e4f1d; padding: 12px 18px; margin: 24px 0; }
+.intermezzo h3 { margin-top: 4px; }

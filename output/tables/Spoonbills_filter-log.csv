@@ -1,0 +1,9 @@
+step,n.fixes,removed
+raw data,199248,NA
+absent coordinates,199248,0
+outside deployment,199248,0
+marked as outlier in Movebank,199248,0
+duplicated timestamps,199178,70
+fewer than 4 satellites,198837,341
+resampled to 1 fix per hour,34676,164161
+position spikes (speed in and out > 30 m/s),34676,0

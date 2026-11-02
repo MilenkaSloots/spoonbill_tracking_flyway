@@ -1,0 +1,248 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[margin=2.2cm,top=2.6cm,bottom=2.4cm]{geometry}
+\usepackage{fontspec}
+\setmainfont{texgyrepagella}[Extension=.otf,UprightFont=*-regular,BoldFont=*-bold,ItalicFont=*-italic,BoldItalicFont=*-bolditalic]
+\setmonofont{DejaVu Sans Mono}[Scale=0.82]
+\usepackage{xcolor}
+\definecolor{bedark}{HTML}{1E4F1D}
+\definecolor{belight}{HTML}{CAEAA9}
+\definecolor{bepale}{HTML}{F1F8E9}
+\definecolor{amber}{HTML}{E0A100}
+\usepackage[nobottomtitles*]{titlesec}
+\renewcommand{\bottomtitlespace}{0.18\textheight}
+\titleformat{\section}{\Large\bfseries\color{bedark}}{}{0pt}{\MakeUppercase}[{\color{belight}\titlerule[1.2pt]}]
+\titleformat{\subsection}{\large\bfseries\color{bedark}}{}{0pt}{}
+\titlespacing*{\section}{0pt}{16pt}{8pt}
+\titlespacing*{\subsection}{0pt}{10pt}{4pt}
+\usepackage{fancyhdr}
+\pagestyle{fancy}\fancyhf{}
+\renewcommand{\headrulewidth}{0pt}
+\fancyhead[L]{\small\color{bedark}\textsc{BirdEyes} · Flyway Ecology course}
+\fancyhead[R]{\small\color{bedark}Week 3, Day 1 · Introduction to tracking data analyses}
+\fancyfoot[C]{\small\thepage}
+\usepackage{enumitem}
+\setlist{itemsep=2pt,topsep=4pt}
+\usepackage{booktabs,tabularx,array}
+\usepackage[most]{tcolorbox}
+\newtcolorbox{goalbox}{breakable,colback=bepale,colframe=bedark,boxrule=0pt,leftrule=5pt,arc=0pt,left=10pt,right=8pt,top=6pt,bottom=6pt}
+\newtcolorbox{notebox}{colback=amber!8,colframe=amber,boxrule=0pt,leftrule=5pt,arc=0pt,left=10pt,right=8pt,top=6pt,bottom=6pt}
+\newtcolorbox{codebox}{colback=gray!6,colframe=gray!40,boxrule=0.4pt,arc=0pt,left=6pt,right=6pt,top=4pt,bottom=4pt}
+\usepackage{xurl}
+\usepackage[hidelinks]{hyperref}
+\hypersetup{colorlinks=true,urlcolor=bedark,linkcolor=bedark}
+\newcommand{\todo}[1]{\colorbox{amber!25}{\strut\small #1}}
+\emergencystretch=3em\setlength{\parindent}{0pt}\setlength{\parskip}{6pt}
+
+\begin{document}
+
+\thispagestyle{empty}
+{\color{bedark}
+\vspace*{-0.6cm}
+{\small A workshop by}\\[2pt]
+{\Huge\bfseries\textsc{BirdEyes}}\\[1pt]
+{\small Centre for Global Ecological Change · University of Groningen}\par}
+\vspace{0.9cm}
+{\color{bedark}\rule{\linewidth}{1.5pt}}\\[8pt]
+{\LARGE\bfseries\color{bedark}\MakeUppercase{Introduction to tracking data analyses}}\\[6pt]
+{\Large Flyway Ecology course · Week 3, Day 1 · Workshop outline}\\[6pt]
+{\color{bedark}\rule{\linewidth}{1.5pt}}
+
+\vspace{4pt}
+\begin{tabular}{@{}ll}
+\textbf{Instructor} & Wouter M.G. Vansteelant (\href{mailto:w.m.g.vansteelant@rug.nl}{w.m.g.vansteelant@rug.nl})\\
+\textbf{Date} & Monday 2 November 2026 (week 3, day 1)\\
+\textbf{Venue} & Room 5173.0165, University of Groningen\\
+\textbf{Material} & GitHub: \href{https://github.com/2026-FE/FE-tracking-workshop-template}{github.com/2026-FE/FE-tracking-workshop-template}\\
+\textbf{Data \& outputs} & \href{https://drive.google.com/drive/folders/1ijXcZ5Htpthri6gpWZAaoprk31PzBblI}{course Google Drive} folder\\
+\end{tabular}
+
+\section{About this day}
+
+This is the first day of week 3 of the Flyway Ecology course. Today we work through a complete, simple workflow for GPS tracking data, from the raw files to a cleaned dataset annotated with solar times and environmental data. During the rest of the week you will apply these concepts, and build on them, to analyse publicly available tracking data that you download from \href{https://www.movebank.org}{Movebank} in small groups.
+
+\textbf{Case study.} Eurasian spoonbills (\textit{Platalea leucorodia}) from the breeding population in the Dutch Wadden Sea, from the Movebank study SPOONBILL\_WAAKVOGELS (ID 2788432319). We use a subset of 10 birds tagged in 2023 on Schiermonnikoog, Texel and Griend: 5 adults and 5 juveniles (hatched in 2023), tracked from 1 August to 31 December 2023 with a GPS position about every 10 minutes. The data cover the end of the breeding season on the tidal flats, the autumn migration along the Atlantic coast of Europe, and the first weeks on the wintering grounds in France, Iberia and Morocco, so you can compare where and when adults and first-year birds travel. The data were collected by the BirdEyes Centre for Global Ecological Change within Project Waakvogels (\href{https://waakvogels.nl/trekvogels/lepelaar}{waakvogels.nl}).
+
+The day is built around one Quarto tutorial (\texttt{.qmd}), which you work through in Positron. The code is explained step by step, and after each part there is an \textbf{intermezzo}: short exercises in which you wrangle and plot the data yourself.
+
+\section{Learning goals}
+
+\begin{goalbox}
+By the end of the day, you will be able to:
+\begin{enumerate}[leftmargin=*]
+\item organise a tracking analysis as a reproducible R project, with relative paths and one output folder;
+\item read Movebank tracking and reference data, standardise column names, handle timestamps in UTC and join metadata to every fix;
+\item remove absent and incorrect fixes with simple, transparent filters (missing coordinates, fixes outside the deployment, duplicates, poor GPS quality, position spikes) and report how many fixes each filter removed;
+\item resample tracks to a fixed interval and calculate movement statistics between consecutive fixes (distance, duration, speed, direction, distance to the tagging site);
+\item classify fixes as day, night, dawn or dusk with \texttt{suntools}, and visualise diel patterns in movement;
+\item download public environmental data (Natural Earth, CORINE Land Cover), handle coordinate reference systems and annotate fixes with vector and raster data;
+\item use \texttt{dplyr} to summarise tracking data and \texttt{ggplot2} to make maps and graphs.
+\end{enumerate}
+\end{goalbox}
+
+\section{Programme}
+
+The timetable below is indicative; we will adapt the pace to the group.
+
+\renewcommand{\arraystretch}{1.25}
+\begin{tabularx}{\linewidth}{@{}p{2.4cm}X@{}}
+\toprule
+\textbf{Time} & \textbf{Session} \\
+\midrule
+09:00--09:10 & Welcome and introduction of the day \\
+09:10--09:30 & \textbf{Setting up} (steps below): R, Positron, Git and packages; your own copy of the course repository on GitHub; workshop data from Google Drive \\
+09:30--09:45 & Introduction to the workshop data: spoonbills of the Dutch Wadden Sea \\
+09:45--11:00 & \textbf{Part 0--1}: R project and packages; reading and pre-processing Movebank data · \textit{Intermezzo 1} \\
+11:00--11:15 & Break \\
+11:15--12:30 & \textbf{Part 2}: cleaning, resampling to 1-hour intervals, movement statistics, position spikes · \textit{Intermezzo 2} \\
+12:30--13:30 & Lunch \\
+13:30--14:15 & \textbf{Part 3}: day, night and twilight with \texttt{suntools}; diel patterns · \textit{Intermezzo 3} \\
+14:15--14:30 & Break \\
+14:30--15:30 & \textbf{Part 4}: environmental annotation with Natural Earth and CORINE Land Cover; use versus availability · \textit{Intermezzo 4} \\
+15:30--16:00 & \textbf{Part 5}: saving outputs; outlook: downloading your own data with \texttt{move2}; group formation for the rest of the week \\
+\bottomrule
+\end{tabularx}
+
+\section{Setting up (first session of the day)}
+
+We set up together at the start of the day (20 minutes), following the steps below. Bring a laptop on which you are allowed to install software. Installing the spatial packages can take 15--30 minutes, so run the first code chunk of the tutorial (step 3) as soon as you have opened it; it can finish during the introduction to the workshop data. If you already have R installed, check that its version is 4.3 or newer.
+
+\subsection{1. Install R, Positron and Git}
+\begin{itemize}[leftmargin=*]
+\item \textbf{R} version 4.3 or newer: \url{https://cran.r-project.org}.
+\item \textbf{Positron} (free): \url{https://positron.posit.co/download}. Positron includes Quarto, which renders the tutorial to an HTML report.
+\item \textbf{Git}, which Positron uses to pull and push your code. macOS: open the Terminal, type \texttt{git --version} and accept the offer to install the command line tools. Windows: install Git for Windows from \url{https://git-scm.com/downloads}.
+\item A free \textbf{GitHub} account: \url{https://github.com/signup}.
+\item Windows and macOS: CRAN provides ready-made binaries of \texttt{sf} and \texttt{terra}, including the GDAL, GEOS and PROJ libraries; nothing else is needed. Linux: install the system libraries first (e.g. \texttt{libgdal-dev}, \texttt{libgeos-dev}, \texttt{libproj-dev}, \texttt{libudunits2-dev}).
+\end{itemize}
+
+\subsection{2. Make your own copy of the course repository}
+The course material is in a GitHub \textit{template} repository (\href{https://github.com/2026-FE/FE-tracking-workshop-template}{github.com/2026-FE/FE-tracking-workshop-template}). You make your own copy of it, work on that copy in Positron, and save your work back to GitHub (\textit{push}) as you go.
+\begin{enumerate}[leftmargin=*]
+\item \textbf{Copy the template.} Go to the template on GitHub, click \textit{Use this template > Create a new repository}, choose yourself as owner, give the repository a name (e.g. \texttt{FE-tracking-workshop-yourname}) and click \textit{Create repository}.
+\item \textbf{Clone your copy into Positron.} On the page of \textit{your} new repository, click the green \textit{Code} button and copy the HTTPS address. In Positron, open the Command Palette (\texttt{Ctrl/Cmd + Shift + P}), choose \textit{Git: Clone}, paste the address, and pick a folder on your computer. Open the cloned folder when Positron asks. The first time, Positron asks you to sign in to GitHub in your browser.
+\item \textbf{Open the tutorial.} Because the cloned folder is now Positron's working folder, all paths in the tutorial work. Open \texttt{Day1\_Intro-tracking-data.qmd}.
+\item \textbf{Save your work to GitHub regularly.} Open the \textit{Source Control} view (\texttt{Ctrl/Cmd + Shift + G}), check the changed files, type a short message describing your change, click \textit{Commit}, and then \textit{Sync Changes} (this pushes your commits to GitHub and pulls any changes made elsewhere, e.g. by a group member). Commit at least after every part of the tutorial.
+\end{enumerate}
+The workshop data and your outputs are deliberately \textbf{not} pushed to GitHub (they are listed in the file \texttt{.gitignore}): the data come from, and the outputs go to, the course Google Drive.
+
+\subsection{3. R packages}
+You do not need to install the packages by hand. The first code chunk of the tutorial (\texttt{ipak()}, step 0.1) checks which of the required packages are missing on your computer, installs those, and then loads all of them. Run that chunk first: on a fresh installation it can take 15--30 minutes, mostly for the spatial packages \texttt{sf} and \texttt{terra}. To render the tutorial to an HTML report you also need \texttt{knitr} and \texttt{rmarkdown}; the first chunk installs them too, and Positron may offer to install them: click \textit{Yes}. (\texttt{ipak()} does not update packages you already have; if you run into errors with an old package, reinstall it, e.g. \texttt{install.packages(\textquotedbl terra\textquotedbl)}.)
+
+\subsection{4. Download the workshop data}
+The tracking data are not in the GitHub repository. Download them from the shared \href{https://drive.google.com/drive/folders/1ijXcZ5Htpthri6gpWZAaoprk31PzBblI}{\textbf{course Google Drive}} folder:
+\begin{itemize}[leftmargin=*]
+\item \texttt{SPOONBILL\_WAAKVOGELS\_workshop-subset\_2023-08\_2023-12.csv.gz} (GPS data, 10 MB)
+\item \texttt{SPOONBILL\_WAAKVOGELS\_workshop-subset\_reference-data.csv} (reference data)
+\end{itemize}
+Save both files, without unzipping or renaming them, in the folder \texttt{data - tracking} of the project. The data are shared for this course only: do not pass them on or use them for other purposes.
+
+\subsection{5. Accounts for the rest of the week}
+\begin{itemize}[leftmargin=*]
+\item Create a free \textbf{Movebank} account: \url{https://www.movebank.org}. Some studies require you to accept the data owner's licence terms on the website before you can download them.
+\item Your group will store its outputs in the shared \href{https://drive.google.com/drive/folders/1ijXcZ5Htpthri6gpWZAaoprk31PzBblI}{\textbf{course Google Drive}} folder. Today, all outputs are saved locally in the \texttt{output/} folder of the project. Later, only the line \texttt{dir.out <- "./output"} needs to change.
+\end{itemize}
+
+\begin{notebox}
+\textbf{Internet connection.} Part 4 downloads Natural Earth layers (a few MB) the first time you run it, and the optional satellite imagery in step 4.5 needs a good connection. Everything else runs offline.
+\end{notebox}
+
+\section{The course material}
+
+\renewcommand{\arraystretch}{1.2}
+\begin{tabularx}{\linewidth}{@{}>{\ttfamily\raggedright}p{5.6cm}>{\raggedright\arraybackslash}X@{}}
+\toprule
+\textrm{\textbf{File or folder}} & \textbf{Contents} \\
+\midrule
+Day1\_Intro-tracking-data.qmd & The tutorial, with empty code chunks for the intermezzos \\
+styles.css & BirdEyes layout of the rendered tutorial (keep it next to the \texttt{.qmd}) \\
+R/movement\_functions.R & Supporting functions: distance, direction and speed between consecutive fixes \\
+data - tracking/ & Empty at first: save the two workshop files from Google Drive here (GPS data as \texttt{.csv.gz}, and the reference data, one row per deployment) \\
+data - environmental/ & CORINE Land Cover 2018 for the Dutch Wadden Sea (100 m) and its legend; Natural Earth layers are downloaded here \\
+output/ & Created by the tutorial, with sub-folders \texttt{maps}, \texttt{graphs} and \texttt{tables} \\
+\bottomrule
+\end{tabularx}
+
+\textbf{How to work through the tutorial.} Run the code chunk by chunk (\textit{Run Cell} above each chunk, or \texttt{Ctrl/Cmd + Shift + Enter}) and read the output as you go. Write your own code in the empty chunks of each intermezzo, and remove the line \texttt{\#| eval: false} from those chunks once your code works. When everything runs, click \textit{Render} (\texttt{Ctrl/Cmd + Shift + K}) to produce an HTML report of your work. Commit and push your work regularly (step 2.4). The solutions are shared at the end of the day.
+
+\section{Contents of the tutorial}
+
+\begin{description}[leftmargin=0pt,style=nextline,itemsep=4pt]
+\item[\color{bedark}Part 1 – Reading and pre-processing]
+Getting the workshop data; reading the Movebank tracking and reference data with \texttt{readr}; consistent column names; timestamps as \texttt{POSIXct} in UTC; joining metadata and checking identifiers; extracting date, year, month and day of year; data availability per bird and day.
+\item[\color{bedark}Part 2 – Cleaning]
+A filter log; removing fixes without coordinates, outside the deployment, flagged as outliers in Movebank, duplicated, or based on fewer than 4 satellites; setting implausible altitudes to \texttt{NA}; resampling the 10-minute tracks to one fix per hour; point-to-point distance, duration, speed and direction; iterative removal of position spikes; sampling intervals; distance to the tagging site; departure dates of adults and juveniles.
+\item[\color{bedark}Part 3 – Day, night and twilight]
+Sunrise, sunset, civil dawn and dusk and solar noon with \texttt{suntools}; classifying fixes as night, dawn, day or dusk; time relative to solar noon; a simple flight/local classification; diel patterns in flight activity.
+\item[\color{bedark}Part 4 – Environmental annotation]
+Points as \texttt{sf} objects; countries and land/sea from Natural Earth (\texttt{rnaturalearth}, including \texttt{ne\_download()}); CORINE Land Cover as a \texttt{terra} raster; reprojecting points to EPSG:3035 and extracting land cover; habitat use on the Wadden Sea tidal flats by day and night; use versus availability of wetland habitats (selection ratios); land-cover map with \texttt{tidyterra}; optional satellite imagery with \texttt{maptiles}.
+\item[\color{bedark}Part 5 – Saving outputs and outlook]
+Writing the cleaned and annotated data and the filter log; downloading data straight from Movebank with \texttt{move2}; a checklist for exploring a new tracking dataset.
+\end{description}
+
+\section{Key R packages}
+
+\renewcommand{\arraystretch}{1.2}
+\begin{tabularx}{\linewidth}{@{}>{\ttfamily\raggedright}p{4.2cm}>{\raggedright\arraybackslash}X@{}}
+\toprule
+\textrm{\textbf{Package}} & \textbf{Used for} \\
+\midrule
+tidyverse & reading data (\texttt{readr}), wrangling and summarising (\texttt{dplyr}, \texttt{tidyr}), dates and times (\texttt{lubridate}), text (\texttt{stringr}), graphs and maps (\texttt{ggplot2}) \\
+sf & vector data: points, lines and polygons; spatial joins and projections \\
+terra & raster data: reading, cropping and extracting values (CORINE Land Cover) \\
+tidyterra & plotting \texttt{terra} rasters with \texttt{ggplot2} \\
+suntools & sunrise, sunset, twilight, solar noon and sun elevation \\
+rnaturalearth, rnaturalearthdata & country borders, land, lakes and rivers from Natural Earth \\
+maptiles & satellite imagery and map tiles (optional step 4.5) \\
+move2 & downloading data directly from Movebank (Part 5 and the rest of the week) \\
+\bottomrule
+\end{tabularx}
+
+Distances, directions and speeds between consecutive fixes are calculated with a few small functions in \texttt{R/movement\_functions.R}, which the tutorial loads at the start.
+
+\section{Data and credits}
+
+\begin{itemize}[leftmargin=*]
+\item \textbf{Spoonbill tracking data}: BirdEyes Centre for Global Ecological Change, Project Waakvogels (\href{https://www.waakvogels.nl}{www.waakvogels.nl}); Movebank study SPOONBILL\_WAAKVOGELS (ID 2788432319). Read about the spoonbill research of Waakvogels: \url{https://waakvogels.nl/trekvogels/lepelaar}. Used with permission for teaching. Do not redistribute the data or use them for other purposes without permission of the data owners.
+\item \textbf{CORINE Land Cover 2018}: © European Union, Copernicus Land Monitoring Service, European Environment Agency. The full European raster can be downloaded free of charge (registration required) from \url{https://land.copernicus.eu}.
+\item \textbf{Natural Earth}: public domain, \url{https://www.naturalearthdata.com}.
+\item \textbf{Satellite imagery} (optional step 4.5): Esri World Imagery.
+\end{itemize}
+
+\section{Troubleshooting}
+
+\begin{description}[leftmargin=0pt,style=nextline,itemsep=3pt]
+\item[\textit{“cannot open file './data - tracking/...': No such file or directory”}]
+Check that the two workshop files are in the folder \texttt{data - tracking}, with their original names. If they are, R is not working inside the project folder: open the folder of your repository in Positron (\textit{File > Open Folder}), or check \texttt{getwd()}.
+\item[\textit{Code that works on the workshop data fails on another Movebank dataset}]
+The workshop dataset has very elaborate and complete metadata: deployment dates, age, sex, tagging site and capture coordinates for every bird, and GPS quality columns for every fix. Many open datasets on Movebank are less complete, or use other column names. Code can then fail when standardising column names, selecting columns or merging the tracking and reference data (e.g. \textit{object `animal\_life\_stage' not found}), or silently produce \texttt{NA}s. Check \texttt{colnames()} and \texttt{glimpse()} of both tables first, and remove or replace the columns your dataset does not have. Two silent traps: a join on tag and bird ID that matches nothing (all metadata become \texttt{NA}), and missing deployment dates, which make the deployment filter remove all fixes.
+\item[\textit{Use versus availability: which habitats are “available”?}]
+In step 4.4 we only count wetland, water and bare-sand land-cover classes as available spoonbill habitat. This deliberately ignores classes that spoonbills do use now and then, such as arable land, grasslands and pastures (about 12\% of the fixes in the Wadden Sea). The selection ratios therefore depend on this choice, and on the area we define as available. Change the list of classes or the area and see how the results change.
+\item[\textit{A package fails to install}]
+Install it on its own (e.g. \texttt{install.packages("terra")}) to see the error. Update R if your version is older than 4.3. On macOS, accept the installation of binary packages.
+\item[\textit{The Natural Earth download fails}]
+Check your internet connection and run the chunk again; the files are only downloaded once and then read from \texttt{data - environmental/naturalearth}.
+\item[\textit{R becomes slow or runs out of memory}]
+Close other programs, and remove large objects you no longer need with \texttt{rm()}. Plotting hundreds of thousands of points takes a few seconds per map.
+\end{description}
+
+\section{Further reading}
+
+\subsection{Spoonbill ecology (background to the case study)}
+\begin{itemize}[leftmargin=*]
+\item Lok T, Overdijk O, Tinbergen JM \& Piersma T (2011) The paradox of spoonbill migration: most birds travel to where survival rates are lowest. \textit{Animal Behaviour} 82: 837--844. \href{https://doi.org/10.1016/j.anbehav.2011.07.019}{doi:10.1016/j.anbehav.2011.07.019}\\
+\textit{Why most Dutch spoonbills migrate to West Africa, where their survival is lowest.}
+\item Henriques Baldé M, Piersma T, Vansteelant W, de Goeij P \& Lok T (2025) A time and a place for everything: Eurasian Spoonbills divide spring and summer activities across different areas in the eastern Dutch Wadden Sea. \textit{Ardea} 113: 3--20. \href{https://doi.org/10.5253/arde.2024.a24}{doi:10.5253/arde.2024.a24}\\
+\textit{GPS tracking of space and habitat use across the stages of the summer in the Wadden Sea.}
+\item Lok T, de Goeij P, Rakhimberdiev E, Piersma T \& Vansteelant W (2025) Eurasian spoonbill chicks receive parental care up to several months after fledging, but not into migration. \textit{Behavioral Ecology and Sociobiology} 79: 109. \href{https://doi.org/10.1007/s00265-025-03649-6}{doi:10.1007/s00265-025-03649-6}\\
+\textit{Colour-ring resightings and GPS tracking of parent--chick pairs after fledging.}
+\end{itemize}
+
+\subsection{R and movement data}
+\begin{itemize}[leftmargin=*]
+\item Wickham, Çetinkaya-Rundel \& Grolemund: \textit{R for Data Science} (2nd ed.), \url{https://r4ds.hadley.nz}
+\item Lovelace, Nowosad \& Muenchow: \textit{Geocomputation with R}, \url{https://r.geocompx.org}
+\item Movebank user guide and data model: \url{https://www.movebank.org/cms/movebank-content/mb-data-model}
+\item \texttt{move2} documentation: \url{https://bartk.gitlab.io/move2/}
+\end{itemize}
+
+\end{document}

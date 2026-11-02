@@ -1,0 +1,1185 @@
+---
+title: "Introduction to tracking data analyses"
+subtitle: "Flyway Ecology course · Week 3, Day 1 tutorial"
+author: "Wouter M.G. Vansteelant · BirdEyes Centre for Global Ecological Change, University of Groningen"
+date: "2 November 2026"
+format:
+  html:
+    toc: true
+    toc-location: left
+    toc-depth: 3
+    df-print: paged
+    embed-resources: true
+    code-tools: true
+    css: styles.css
+    fig-width: 9
+    fig-height: 5.5
+    fig-dpi: 96
+execute:
+  echo: true
+  message: false
+  warning: false
+engine: knitr
+---
+
+
+
+# About this tutorial
+
+This tutorial is the backbone of **day 1 of week 3** of the Flyway Ecology course. During the rest of the week you will apply (and extend) these steps to tracking data that you download yourself from [Movebank](https://www.movebank.org).
+
+We work through a complete, simple workflow from raw files to an annotated tracking dataset:
+
+1. **Read and pre-process** raw Movebank data: tidy column names, timestamps, metadata.
+2. **Clean** the data: remove absent and incorrect fixes, resample the tracks to a fixed interval, calculate movement statistics and check for impossible positions.
+3. **Classify fixes as day, night or twilight** using solar times (`suntools`).
+4. **Annotate** the tracks with publicly available environmental data: Natural Earth and CORINE Land Cover.
+5. **Save** your outputs, and download data directly from Movebank.
+
+Throughout the tutorial you will find **intermezzos**: short exercises where you wrangle and plot the data yourself. Write your own code in the empty chunks. The solutions will be shared at the end of the day.
+
+**Case study.** Eurasian spoonbills (*Platalea leucorodia*) from the breeding population in the Dutch Wadden Sea, GPS-tracked in the Movebank study *SPOONBILL_WAAKVOGELS* (Movebank ID 2788432319). We use a subset of **10 birds** tagged in 2023 on Schiermonnikoog, Texel and Griend: **5 adults and 5 juveniles** (birds hatched in 2023), tracked from **1 August to 31 December 2023**. The tags record a GPS position about every 10 minutes. The period covers the end of the breeding season in the Wadden Sea, the autumn migration and the first weeks on the wintering grounds, so you can compare where and when adults and first-year birds travel.
+
+The spoonbill data were collected by the **BirdEyes Centre for Global Ecological Change** (University of Groningen) within **Project Waakvogels** ([www.waakvogels.nl](https://www.waakvogels.nl)). Read about the spoonbill research of Waakvogels [here](https://waakvogels.nl/trekvogels/lepelaar).
+
+**Background reading**
+
+* Lok T, Overdijk O, Tinbergen JM & Piersma T (2011) [The paradox of spoonbill migration: most birds travel to where survival rates are lowest](https://doi.org/10.1016/j.anbehav.2011.07.019). *Animal Behaviour* 82: 837–844. Why do most Dutch spoonbills winter in West Africa, where survival is lowest?
+* Henriques Baldé M, Piersma T, Vansteelant W, de Goeij P & Lok T (2025) [A time and a place for everything: Eurasian Spoonbills divide spring and summer activities across different areas in the eastern Dutch Wadden Sea](https://doi.org/10.5253/arde.2024.a24). *Ardea* 113: 3–20. GPS tracking of space and habitat use across the stages of the summer in the Wadden Sea.
+* Lok T, de Goeij P, Rakhimberdiev E, Piersma T & Vansteelant W (2025) [Eurasian spoonbill chicks receive parental care up to several months after fledging, but not into migration](https://doi.org/10.1007/s00265-025-03649-6). *Behavioral Ecology and Sociobiology* 79: 109. Colour-ring resightings and tracking of parent–chick pairs.
+
+::: {.callout-note}
+## How to use this file
+
+Open the folder `day1_intro-tracking-data` in **Positron** (*File > Open Folder*), or open `day1_intro-tracking-data.Rproj` in **RStudio**. Then open this `.qmd` file. Run the code chunk by chunk (*Run Cell* above each chunk, or `Ctrl/Cmd + Shift + Enter`), and read the output as you go. Write your own code in the empty chunks of each intermezzo (they are not run when you render, until you remove `#| eval: false`). When everything runs, you can *Render* the whole file to an HTML report (`Ctrl/Cmd + Shift + K`).
+:::
+
+# PART 0: Setting up
+
+## STEP 0.1: Load all required packages
+
+The function `ipak()` installs every package you have not installed yet, and then loads them all.
+
+```{r}
+#| label: packages
+#| results: hide
+ipak <- function(pkg){
+  new.pkg <- pkg[!(pkg %in% installed.packages()[, "Package"])]
+  if (length(new.pkg))
+    install.packages(new.pkg, dependencies = TRUE)
+  sapply(pkg, require, character.only = TRUE)
+}
+
+# List of packages needed to run our code. NOTE: tidyverse is loaded LAST, so its
+# functions (e.g. dplyr::select, dplyr::filter) win when two packages use the same name.
+packages <- c("knitr","rmarkdown","sf","terra","tidyterra","suntools","rnaturalearth",
+              "rnaturalearthdata","maptiles","tidyverse")
+
+# sf:                vector data (points, lines, polygons)
+# terra:             raster data
+# tidyterra:         plot and wrangle terra objects with ggplot2/tidyverse syntax
+# suntools:          sunrise, sunset, twilight and solar noon
+# rnaturalearth(data): open access spatial data from www.naturalearthdata.com
+# maptiles:          download map tiles and satellite imagery (optional step 4.5)
+# knitr, rmarkdown:  needed to render this .qmd file to an HTML report
+# tidyverse:         readr (reading data), dplyr & tidyr (wrangling), ggplot2 (plotting),
+#                    lubridate (dates and times), stringr (text)
+
+ipak(packages)
+```
+
+
+## STEP 0.2: Folders and supporting functions
+
+All paths are relative to the project folder (the folder that contains this file). All outputs go to one folder, `dir.out`. Later in the week this will point to the course's shared Google Drive folder; for now everything is stored locally.
+
+```{r}
+#| label: folders
+dir.tracking <- "./data - tracking"
+dir.env      <- "./data - environmental"
+dir.out      <- "./output"    # <- LATER: path to your group's folder in the course Google Drive
+                              #    https://drive.google.com/drive/folders/1ijXcZ5Htpthri6gpWZAaoprk31PzBblI
+
+# create output folders (nothing happens if they already exist)
+for(d in file.path(dir.out, c("maps","graphs","tables"))){
+  dir.create(d, recursive = TRUE, showWarnings = FALSE)
+}
+
+# Load supporting functions: distance, direction and speed between consecutive fixes.
+# Have a look inside this file: you can consider it a small home-made package.
+source("./R/movement_functions.R")
+```
+
+
+# PART 1: Reading and (pre)processing tracking data
+
+## STEP 1.1: Get the workshop data
+
+Movebank lets you download all tracking data of a study as one `.csv` file, and the metadata (the *reference data*: one row per deployment of a tag on an animal) as a second `.csv` file. For this workshop we prepared both files for our subset of 10 spoonbills.
+
+::: {.callout-note}
+## Download the workshop data now
+
+1. Go to the [course's shared Google Drive folder](https://drive.google.com/drive/folders/1ijXcZ5Htpthri6gpWZAaoprk31PzBblI) and open the folder with the workshop data for day 1.
+2. Download these two files:
+   * `SPOONBILL_WAAKVOGELS_workshop-subset_2023-08_2023-12.csv.gz` (GPS data, 10 MB)
+   * `SPOONBILL_WAAKVOGELS_workshop-subset_reference-data.csv` (reference data)
+3. Save them, **without unzipping or renaming them**, in the folder `data - tracking` of this project.
+
+The data are shared for this course only: do not pass them on or use them for other purposes.
+:::
+
+Check that R can find both files:
+
+```{r}
+#| label: check-files
+list.files(dir.tracking)
+```
+
+At the end of this tutorial you will see how to download data directly from Movebank into R, which you will do for your own projects later this week.
+
+## STEP 1.2: Load the (meta)data
+
+We read both files from the `data - tracking` folder. The tracking file is compressed (`.csv.gz`); `read_csv()` unzips it on the fly.
+
+```{r}
+#| label: read-data
+tracks <- read_csv(file.path(dir.tracking, "SPOONBILL_WAAKVOGELS_workshop-subset_2023-08_2023-12.csv.gz"),
+                   col_types = cols(timestamp = col_character(),
+                                    `tag-local-identifier` = col_character()),
+                   guess_max = 1e6)  # larger than the number of rows
+
+meta <- read_csv(file.path(dir.tracking, "SPOONBILL_WAAKVOGELS_workshop-subset_reference-data.csv"),
+                 col_types = cols(.default = col_character()))
+```
+
+::: {.callout-note}
+## Why `guess_max = 1e6`?
+
+`read_csv()` guesses the type of each column (number, text, date, ...) from the first rows only. Movebank files are sorted per individual, and some columns can be empty for the first bird(s). If R only looks at the first rows, it guesses "empty/logical" and turns all later values into `NA`. Letting it look at (up to a million) rows prevents that. For bigger files, increase this number. We also read `timestamp` and the tag numbers as text, so we keep full control over time zones and identifiers.
+:::
+
+Check the structure of both tables. Pay attention to the format of each column (character, numeric, ...).
+
+```{r}
+#| label: str-data
+glimpse(tracks)
+glimpse(meta)
+```
+
+## STEP 1.3: Consistent column names
+
+Column names in Movebank downloads come in different flavours: `location-long` (download from the website, as here), `location.long` (after `read.csv()`) or `location_long` (the `move2` package). Some also contain a colon (`gps:hdop`). We replace hyphens, dots and colons by underscores, so the same code works for every version.
+
+```{r}
+#| label: clean-names
+tracks <- tracks %>% rename_with(~ str_replace_all(.x, "[-.:]", "_"))
+meta   <- meta   %>% rename_with(~ str_replace_all(.x, "[-.:]", "_"))
+
+colnames(tracks)
+```
+
+Next we keep only the columns we need, and give them short names. This is personal preference, but short names save a lot of typing. We also convert the timestamp to a proper date-time (`POSIXct`) object in UTC, the time zone used by Movebank.
+
+```{r}
+#| label: select-columns
+data <- tracks %>%
+  transmute(ID         = individual_local_identifier,
+            dev        = tag_local_identifier,
+            dt         = ymd_hms(timestamp, tz = "UTC"),
+            lat        = location_lat,
+            long       = location_long,
+            spd_gps    = ground_speed,           # instantaneous GPS speed (m/s)
+            alt_msl    = height_above_msl,       # GPS altitude above mean sea level (m)
+            temp       = external_temperature,   # tag temperature (degrees C)
+            hdop       = gps_hdop,               # horizontal dilution of precision
+            nsat       = gps_satellite_count,    # nr of satellites used for the fix
+            outlier_mb = import_marked_outlier)  # TRUE if flagged as outlier in Movebank
+
+birds <- meta %>%
+  transmute(ID            = animal_id,
+            dev           = tag_id,
+            session_start = ymd_hms(deploy_on_date, tz = "UTC", quiet = TRUE),
+            session_end   = ymd_hms(deploy_off_date, tz = "UTC", quiet = TRUE),
+            age           = animal_life_stage,   # age at tagging: adult, or juvenile (hatched in 2023)
+            sex           = animal_sex,
+            name          = animal_nickname,
+            ring          = animal_ring_id,      # metal ring
+            site          = study_site,          # where the bird was tagged
+            site.lat      = as.numeric(capture_latitude),
+            site.long     = as.numeric(capture_longitude))
+
+birds
+```
+
+Note that the spoonbill IDs are colour-ring codes (e.g. `RYa/RYfL`, `NF47`).
+
+::: {.callout-note}
+## Disclaimer: other datasets will be messier
+
+The workshop dataset comes with very elaborate and complete reference data: deployment dates, age, sex, nickname, ring number, tagging site and capture coordinates for every bird. Many open datasets on Movebank are much less complete. Columns may be missing altogether (e.g. no `animal-life-stage` or `capture-latitude`), be empty, or carry different names, and the tracking data may lack quality columns such as `gps:satellite-count`. Code that works here can then fail when you standardise column names, select columns or join tables, typically with an error such as *object 'animal_life_stage' not found*, or silently give you `NA`s. With a new dataset, always start with `colnames()` and `glimpse()` on both tables, and adapt the `transmute()` calls above: drop the columns that do not exist, or replace them (e.g. take the tagging site from the first fix of each bird). `any_of()` inside `select()` lets you select columns only if they exist.
+:::
+
+## STEP 1.4: Combine metadata and tracking data
+
+We join the bird information to every GPS fix, matching on both the animal and the tag. `left_join()` keeps all rows of `data`.
+
+```{r}
+#| label: join
+data <- data %>% left_join(birds, by = c("ID","dev"))
+
+nrow(tracks) == nrow(data)  # same number of rows as before: the join did not duplicate fixes
+rm(tracks, meta)            # free up memory
+```
+
+Always check that every bird in the tracking data was matched to the reference data. If not (e.g. a typo in an ID, or a tag number stored differently), the bird information would be `NA`.
+
+```{r}
+#| label: check-join
+unique(data$ID)
+unique(data$dev)
+
+data %>% filter(is.na(age)) %>% distinct(ID, dev)   # should be empty
+```
+
+All 10 birds were matched, so no identifiers need fixing in this dataset. In other datasets you will often have to correct tag numbers or simplify bird IDs at this point (e.g. with `str_replace()` or `if_else()`). If the reference data have no tag numbers, or the IDs are written differently in the two tables, the join fails silently: every bird gets `NA` for age, sex etc. Then join on the bird ID only (`by = "ID"`), or fix the IDs first.
+
+## STEP 1.5: Extract useful time variables
+
+Once `dt` is a date-time object, `lubridate` makes it easy to extract dates, years, months and days of the year. We write this as a small function, because we will need it again after resampling.
+
+```{r}
+#| label: time-vars
+add_time_vars <- function(df){
+  df %>% mutate(date = as_date(dt),
+                yr   = year(dt),
+                mth  = month(dt),
+                doy  = yday(dt))
+}
+
+data <- add_time_vars(data)
+```
+
+## STEP 1.6: First exploration
+
+How much data do we have per bird?
+
+```{r}
+#| label: summary-bird
+summary.per.bird <- data %>%
+  group_by(ID, name, age, sex, site) %>%
+  summarise(n.fixes        = n(),
+            first.dt       = min(dt),
+            last.dt        = max(dt),
+            track.duration = as.numeric(difftime(last.dt, first.dt, units = "days")),
+            n.days         = n_distinct(date),
+            missing.days   = round(track.duration) - n.days,
+            .groups = "drop")
+
+summary.per.bird
+```
+
+When were the birds tracked, and how many fixes do we have per day? `geom_tile()` draws a block for every bird and date, filled by the number of fixes.
+
+```{r}
+#| label: data-availability
+#| fig-height: 4
+fixes.per.birdday <- data %>%
+  count(ID, age, date, name = "n.fixes")
+
+ggplot()+
+  geom_tile(data=fixes.per.birdday,aes(x=date,y=ID,fill=n.fixes))+
+  scale_fill_viridis_c("Fixes per day",option="viridis")+
+  scale_x_date(date_breaks="1 month",date_labels="%b %Y")+
+  xlab("Date")+ylab("")+
+  theme_classic()+
+  facet_grid(age~.,scales="free_y",space="free_y")
+```
+
+With a fix every 10 minutes we expect about 144 fixes per day. Note that the tracks of the two juveniles from Texel (NFRV and NFT3) end before the end of the year, and that on some days the tags recorded fewer fixes.
+
+::: {.intermezzo}
+### Intermezzo 1 – Explore the raw data
+
+i. Calculate the highest and lowest altitude (`alt_msl`) and GPS speed (`spd_gps`) recorded for each individual. Do you see values that cannot be right?
+ii. Make a histogram of the altitudes. Use `scale_y_log10()` to see the rare values.
+iii. Calculate the number of fixes per bird per **week** and show it as a bar chart, with one panel per bird (`facet_wrap()`) and the bars coloured by age.
+:::
+
+```{r}
+#| label: my-intermezzo-1
+#| eval: false
+# Your code here
+
+
+```
+
+
+# PART 2: Cleaning tracking data
+
+Every tracking dataset contains fixes that are absent or wrong. A few simple, transparent filters remove most of them. We keep a log of how many fixes each step removes, so we can report it (e.g. in the methods section of a paper).
+
+```{r}
+#| label: filter-log
+filter.log <- tibble(step = "raw data", n.fixes = nrow(data))
+
+log_step <- function(log, step, df){
+  add_row(log, step = step, n.fixes = nrow(df))
+}
+```
+
+## STEP 2.1: Remove absent fixes
+
+Fixes without coordinates, or with coordinates of exactly 0,0 (a common default when a tag fails to get a fix), are useless.
+
+```{r}
+#| label: filter-absent
+data <- data %>%
+  filter(!is.na(lat), !is.na(long),
+         !(lat == 0 & long == 0))
+
+filter.log <- log_step(filter.log, "absent coordinates", data)
+```
+
+This dataset happens to be clean, so nothing was removed. In other datasets (including the ones you will download this week) this step often removes many fixes.
+
+## STEP 2.2: Remove fixes outside the deployment
+
+Tags often record positions before they are put on a bird (during testing, or while waiting for release) and sometimes after the bird died or lost its tag. The deployment start and end in the reference data tell us which fixes belong to the bird.
+
+```{r}
+#| label: filter-deployment
+data %>%
+  filter(dt < session_start | (!is.na(session_end) & dt > session_end)) %>%
+  count(ID, name = "fixes.outside.deployment")
+
+data <- data %>%
+  filter(dt >= session_start,
+         is.na(session_end) | dt <= session_end)
+
+filter.log <- log_step(filter.log, "outside deployment", data)
+```
+
+Nothing is removed here, because our subset starts on 1 August, after all birds were tagged. When you download a complete Movebank study, always do this check.
+
+**Watch out:** if a dataset has no deployment start dates (`session_start` is `NA`), the filter above removes *all* fixes of that bird, because R cannot compare a date with `NA`. Check with `summary(birds$session_start)` first, and skip or adapt this step if the dates are missing (e.g. `is.na(session_start) | dt >= session_start`).
+
+## STEP 2.3: Remove outliers flagged in Movebank, and duplicates
+
+Data owners can mark outliers in Movebank. We also remove duplicated fixes: rows of the same bird with the same timestamp.
+
+```{r}
+#| label: filter-outliers-duplicates
+data <- data %>% filter(!(outlier_mb %in% TRUE))
+filter.log <- log_step(filter.log, "marked as outlier in Movebank", data)
+
+sum(duplicated(data[, c("ID","dt")]))
+
+data <- data %>% distinct(ID, dt, .keep_all = TRUE)
+filter.log <- log_step(filter.log, "duplicated timestamps", data)
+```
+
+## STEP 2.4: Remove poor-quality fixes
+
+GPS tags store information on the quality of each fix. A fix calculated from only 3 satellites is a "2D fix": the tag cannot estimate altitude and the position is less reliable. A high HDOP (*horizontal dilution of precision*) means the satellites were badly spread over the sky.
+
+```{r}
+#| label: gps-quality
+#| fig-height: 3
+ggplot()+
+  geom_bar(data=data,aes(x=nsat))+
+  xlab("Number of satellites")+
+  theme_classic()
+
+table(data$nsat < 4, useNA = "ifany")
+```
+
+We remove fixes with fewer than 4 satellites. (If a tag does not store the number of satellites, `nsat` is `NA`: the code below keeps those fixes.)
+
+```{r}
+#| label: filter-quality
+data <- data %>% filter(is.na(nsat) | nsat >= 4)
+filter.log <- log_step(filter.log, "fewer than 4 satellites", data)
+```
+
+## STEP 2.5: Flag implausible altitudes
+
+GPS altitude is much less precise than GPS position. Rather than throwing away good positions because of a bad altitude, we set implausible altitudes to `NA`. Spoonbills rarely fly higher than a few km, and the Wadden Sea is at sea level, so we accept values between -100 and 6000 m.
+
+```{r}
+#| label: filter-altitude
+data <- data %>%
+  mutate(alt_msl = if_else(alt_msl < -100 | alt_msl > 6000, NA_real_, alt_msl))
+
+sum(is.na(data$alt_msl))
+```
+
+Here is the summary of the filters so far:
+
+```{r}
+#| label: show-filter-log
+filter.log <- filter.log %>% mutate(removed = lag(n.fixes) - n.fixes)
+knitr::kable(filter.log)
+```
+
+## STEP 2.6: Resample the tracks to 1-hour intervals
+
+How regular is the sampling? We calculate the time between consecutive fixes of each bird.
+
+```{r}
+#| label: raw-intervals
+#| fig-height: 3
+data <- data %>%
+  arrange(ID, dt) %>%
+  group_by(ID) %>%
+  mutate(interval = as.numeric(difftime(lead(dt), dt, units = "mins"))) %>%
+  ungroup()
+
+ggplot()+
+  geom_histogram(data=data,aes(x=interval),binwidth=1)+
+  scale_y_log10()+
+  coord_cartesian(xlim=c(0,130))+
+  xlab("Interval to next fix [minutes]")+
+  theme_classic()
+
+data %>% count(interval = round(interval, -1), sort = TRUE) %>% head(6)
+```
+
+Most fixes are 10 minutes apart, but there are also intervals of 20, 30 and 60 minutes and longer gaps. Different intervals between birds, or over time, complicate comparisons: a distance travelled per day, or a speed between fixes, depends on how often positions were recorded. Moreover, 10-minute data are more detailed than we need to study migration, and they make every calculation slower.
+
+So we **resample** the tracks to a common resolution of **1 hour**. For every bird and every full hour, we keep the one fix closest in time to that full hour. Note that we keep real, measured positions and do not invent positions where there are none: gaps in the data remain gaps.
+
+```{r}
+#| label: resample
+full <- data  # keep a back-up of the full-resolution data
+
+data <- full %>%
+  mutate(dt_hr     = round_date(dt, "1 hour"),     # nearest full hour
+         dt_offset = abs(as.numeric(difftime(dt, dt_hr, units = "mins")))) %>%
+  group_by(ID, dt_hr) %>%
+  slice_min(dt_offset, n = 1, with_ties = FALSE) %>%  # the fix closest to that hour
+  ungroup() %>%
+  select(-dt_hr, -dt_offset, -interval) %>%
+  arrange(ID, dt)
+
+nrow(full) - nrow(data)  # number of fixes removed by resampling
+filter.log <- log_step(filter.log, "resampled to 1 fix per hour", data) %>%
+  mutate(removed = lag(n.fixes) - n.fixes)
+rm(full)
+```
+
+::: {.callout-note}
+## Other ways to resample
+
+You can change `"1 hour"` to any interval (e.g. `"30 mins"`, `"2 hours"`). An alternative, useful for tags that record *bursts* of positions at 1-second intervals, is to round every timestamp down to the interval with `floor_date()` and take the **median** position of all fixes in each window (`group_by()` + `summarise()`). Packages such as `amt` and `move2` can also interpolate tracks to exact, regular times.
+:::
+
+## STEP 2.7: Map the tracks
+
+Before going further, look at the data on a map. We use a world map from Natural Earth (included in the `rnaturalearthdata` package) and set the map limits to the range of the data.
+
+```{r}
+#| label: map-tracks
+#| fig-height: 7
+world <- ne_countries(scale = 50, returnclass = "sf")
+
+latlimits  <- c(min(data$lat) - 0.5, max(data$lat) + 0.5)
+longlimits <- c(min(data$long) - 0.5, max(data$long) + 0.5)
+
+map.tracks <- ggplot()+
+  geom_sf(data=world,fill='grey60',col='grey85',linewidth=.1)+
+  geom_path(data=data,aes(x=long,y=lat,col=ID,group=ID),linewidth=.2)+
+  geom_point(data=data,aes(x=long,y=lat,col=ID),size=.3,shape=16)+
+  scale_colour_viridis_d(option="turbo")+
+  coord_sf(xlim=longlimits,ylim=latlimits,expand=FALSE)+
+  theme_classic()+
+  theme(panel.background=element_rect(fill='grey85'))+
+  guides(col=guide_legend(override.aes=list(size=3,linewidth=1)))+
+  xlab("")+ylab("")+
+  facet_wrap(~age)
+
+map.tracks
+
+# save the map to the output folder
+ggsave(file.path(dir.out, "maps", "Map_tracks_per-bird.png"), map.tracks,
+       width = 24, height = 16, units = "cm", dpi = 300)
+```
+
+The birds leave the Wadden Sea and migrate south along the Atlantic side of Europe. The adults travel on to Portugal, southern Spain and Morocco. Three juveniles stop in western France and one on the north coast of Spain, while one stays in the Netherlands. Let's see how latitude changes over time:
+
+```{r}
+#| label: lat-time
+#| fig-height: 4
+ggplot()+
+  geom_path(data=data,aes(x=dt,y=lat,col=ID,group=ID),linewidth=.3)+
+  scale_colour_viridis_d(option="turbo")+
+  scale_x_datetime(date_breaks="1 month",date_labels="%b")+
+  xlab("")+ylab("Latitude")+
+  theme_classic()+
+  facet_wrap(~age)
+```
+
+Splitting the age groups into panels keeps the plot readable, but makes it harder to compare them. Plot all birds in one panel, coloured by age group, for a direct comparison of the timing and extent of migration:
+
+```{r}
+#| label: lat-time-age
+#| fig-height: 4
+age.cols <- c("adult"="darkorange3","juvenile"="steelblue")
+
+ggplot()+
+  geom_path(data=data,aes(x=dt,y=lat,col=age,group=ID),linewidth=.4,alpha=.8)+
+  scale_colour_manual("Age",values=age.cols)+
+  scale_x_datetime(date_breaks="1 month",date_labels="%b")+
+  xlab("")+ylab("Latitude")+
+  theme_classic()
+```
+
+Adults and juveniles leave the Wadden Sea over a similar period, but the adults travel much further south.
+
+## STEP 2.8: Point-to-point movement statistics
+
+Next we calculate, for each fix, the distance, time, speed and direction to the next fix of the same bird. The function `calc_movestats()` (in `R/movement_functions.R`) does this with `group_by()` and `lead()`, so the last fix of one bird is never connected to the first fix of the next bird.
+
+```{r}
+#| label: movestats
+data <- calc_movestats(data)
+
+data %>% select(ID, dt, lat, long, dist, dur, dir, spd, spd_in) %>% head()
+```
+
+`dist` is in metres, `dur` in seconds, so `spd` is in m/s. Spoonbills fly at about 10–15 m/s (35–55 km/h), faster with a tailwind. Speeds above 30 m/s (108 km/h) are unlikely, and above 40 m/s impossible.
+
+```{r}
+#| label: speed-hist
+#| fig-height: 3
+ggplot()+
+  geom_histogram(data=data,aes(x=spd),binwidth=.5)+
+  scale_y_log10()+
+  geom_vline(xintercept=30,col='red',linetype='dashed')+
+  xlab("Speed between fixes [m/s]")+
+  theme_classic()
+
+# the five fastest steps
+data %>% slice_max(spd, n = 5) %>% select(ID, dt, lat, long, spd, dur)
+```
+
+## STEP 2.9: Remove position spikes
+
+A wrong position (a "spike") creates two impossible speeds: one to get there (`spd_in`) and one to get back (`spd`). A single high speed between two plausible positions may well be a real, fast flight with a tailwind. So we only remove fixes with an impossible speed **in and out**. Removing a spike changes the speeds of its neighbours, so we recalculate and repeat until no spikes are left.
+
+```{r}
+#| label: remove-spikes
+max.spd <- 30  # m/s
+
+repeat{
+  data <- data %>% mutate(is.spike = coalesce(spd > max.spd & spd_in > max.spd, FALSE))
+  n.spikes <- sum(data$is.spike)
+  message(n.spikes, " spikes removed")
+  if(n.spikes == 0) break
+  data <- data %>% filter(!is.spike) %>% calc_movestats()
+}
+
+data <- data %>% select(-is.spike)
+filter.log <- log_step(filter.log, "position spikes (speed in and out > 30 m/s)", data) %>%
+  mutate(removed = lag(n.fixes) - n.fixes)
+```
+
+This dataset is very clean: the loop finds no spikes, and no speed exceeds 30 m/s. Keep this step in your workflow anyway: in many datasets (and especially at higher sampling rates, where a GPS error of a few hundred metres already gives an impossible speed) it removes the worst errors.
+
+Finally, check the sampling intervals of the resampled data. The dashed line marks 1 hour.
+
+```{r}
+#| label: intervals
+#| fig-height: 5
+ggplot()+
+  geom_histogram(data=data,aes(x=dur/60),bins=100)+
+  scale_y_log10()+
+  scale_x_log10()+
+  geom_vline(xintercept=60,linetype='dashed',col='red',linewidth=.3)+
+  xlab("Interval to next fix [minutes, log scale]")+
+  theme_classic()+
+  facet_wrap(~ID,ncol=2)
+```
+
+Almost all intervals are now 1 hour, but the gaps in the original data remain. Keep this in mind when you interpret speeds and distances.
+
+## STEP 2.10: Distance to the tagging site
+
+A very useful variable for migrants is the distance of each fix to where the bird was tagged: its breeding colony (adults) or natal colony (juveniles). The coordinates of the tagging site of each bird are in the reference data (`site.lat`, `site.long`). Many Movebank datasets do not contain capture coordinates; you can then use the first fix of each bird instead (`group_by(ID) %>% mutate(site.lat = first(lat), site.long = first(long))`), provided the data start at the tagging site.
+
+```{r}
+#| label: dist-colony
+#| fig-height: 7
+data <- data %>%
+  mutate(dist_to_colony = dist_to_point(lat, long, site.lat, site.long)/1000)  # in km
+
+ggplot()+
+  geom_path(data=data,aes(x=dt,y=dist_to_colony,col=age,group=ID),linewidth=.4)+
+  scale_colour_manual(values=age.cols)+
+  scale_x_datetime(date_breaks="1 month",date_labels="%b")+
+  ylab("Distance to tagging site [km]")+xlab("")+
+  theme_classic()+
+  facet_wrap(~ID,ncol=2)
+```
+
+This graph shows the migration of each bird at a glance: long periods near the colony or at a stopover site (flat lines), interrupted by migratory flights (steep rises).
+
+::: {.intermezzo}
+### Intermezzo 2 – Maps and graphs
+
+i. Make a map of all fixes coloured according to the distance to the tagging site. Then do the same, but coloured by GPS altitude.
+ii. Make a map that zooms in on the Dutch Wadden Sea (longitude 4.5 to 6.8, latitude 52.9 to 53.65), with fixes coloured per individual. *Hint: change `xlim` and `ylim` in `coord_sf()`.*
+iii. Make a graph of the speed (`spd`, in km/h) of the adult NACF over time during September 2023.
+iv. Calculate for each bird and date the number of fixes, the total distance travelled (sum of `dist`, in km) and the maximum distance to the tagging site. Plot the daily distance travelled over time. Can you spot the migratory flights?
+v. **Bonus:** define the departure date of each bird as the first day on which it was more than 100 km from its tagging site. Do adults or juveniles leave earlier?
+:::
+
+```{r}
+#| label: my-intermezzo-2
+#| eval: false
+# Your code here
+
+
+```
+
+
+# PART 3: Day, night and twilight
+
+Many birds behave differently by day and by night: they forage at night, roost by day, or migrate at night. In the Wadden Sea, spoonbills also follow the tides. To study diel patterns we classify every fix by the position of the sun at that place and time.
+
+## STEP 3.1: Calculate solar times for every fix
+
+The `suntools` package calculates sunrise, sunset, solar noon and twilight times for any place and date. It takes a matrix of coordinates (longitude first!) and a vector of dates (`POSIXct`, here midnight UTC of the date of each fix).
+
+Twilight is the period when the sun is just below the horizon. We use **civil twilight**: the sun between 0 and 6 degrees below the horizon (`solarDep = 6`). Other definitions are nautical (12°) and astronomical (18°) twilight.
+
+```{r}
+#| label: suntimes
+crds  <- as.matrix(data[, c("long","lat")])
+dates <- as.POSIXct(data$date, tz = "UTC")
+
+srise <- sunriset(crds, dates, direction = "sunrise", POSIXct.out = TRUE)
+sset  <- sunriset(crds, dates, direction = "sunset",  POSIXct.out = TRUE)
+snoon <- solarnoon(crds, dates, POSIXct.out = TRUE)
+dawn  <- crepuscule(crds, dates, solarDep = 6, direction = "dawn", POSIXct.out = TRUE)
+dusk  <- crepuscule(crds, dates, solarDep = 6, direction = "dusk", POSIXct.out = TRUE)
+
+# The POSIXct.out = TRUE output is a data frame with 'day_frac' and 'time'
+head(srise)
+
+data <- data %>%
+  mutate(srise_R = srise$time,
+         sset_R  = sset$time,
+         snoon_R = snoon$time,
+         dawn_R  = dawn$time,
+         dusk_R  = dusk$time)
+
+rm(crds, dates, srise, sset, snoon, dawn, dusk)
+```
+
+## STEP 3.2: Classify fixes
+
+```{r}
+#| label: daynight
+data <- data %>%
+  mutate(daynight = case_when(dt >= srise_R & dt < sset_R  ~ "day",
+                              dt >= dawn_R  & dt < srise_R ~ "dawn",
+                              dt >= sset_R  & dt < dusk_R  ~ "dusk",
+                              TRUE                         ~ "night"),
+         daynight = factor(daynight, levels = c("night","dawn","day","dusk")))
+
+table(data$daynight)
+```
+
+Besides a category, it is useful to express the time of each fix relative to **solar noon** (in hours). This puts all fixes on the same "solar clock", whatever the longitude or time of year.
+
+```{r}
+#| label: solar-clock
+data <- data %>%
+  mutate(dt_to_noon    = as.numeric(difftime(dt, snoon_R, units = "hours")),
+         dt_to_noon    = case_when(dt_to_noon < -12 ~ dt_to_noon + 24,
+                                   dt_to_noon >  12 ~ dt_to_noon - 24,
+                                   TRUE             ~ dt_to_noon),
+         srise_to_noon = as.numeric(difftime(srise_R, snoon_R, units = "hours")),
+         sset_to_noon  = as.numeric(difftime(sset_R,  snoon_R, units = "hours")),
+         dawn_to_noon  = as.numeric(difftime(dawn_R,  snoon_R, units = "hours")),
+         dusk_to_noon  = as.numeric(difftime(dusk_R,  snoon_R, units = "hours")))
+
+# Range of twilight and sunrise/sunset times across all data: useful for background
+# shading in diel graphs
+suntimes.range <- data %>%
+  summarise(dawn_earliest  = min(dawn_to_noon,  na.rm = TRUE),
+            srise_latest   = max(srise_to_noon, na.rm = TRUE),
+            sset_earliest  = min(sset_to_noon,  na.rm = TRUE),
+            dusk_latest    = max(dusk_to_noon,  na.rm = TRUE))
+
+# remove columns we do not need anymore
+data <- data %>% select(-c(srise_R, sset_R, snoon_R, dawn_R, dusk_R,
+                          srise_to_noon, sset_to_noon, dawn_to_noon, dusk_to_noon))
+```
+
+## STEP 3.3: Flights and diel patterns
+
+To look at diel patterns in movement, we first make a very simple classification: fixes followed by a speed above 1.5 m/s (5.4 km/h, averaged over an hour) are "flight", all others "local". A spoonbill that moves faster than that over an hour has certainly been flying.
+
+```{r}
+#| label: travel
+data <- data %>% mutate(travel = if_else(spd > 1.5, "flight", "local", missing = "local"))
+```
+
+Where and when do the birds fly?
+
+```{r}
+#| label: map-daynight
+#| fig-height: 7
+solar.cols <- c("night"="navyblue","dawn"="cornflowerblue","day"="orange","dusk"="orangered3")
+
+# Colour each track segment by the solar period at its start, but only for flight
+# segments; local movements stay grey (NA).
+data <- data %>% mutate(flight.daynight = if_else(travel == "flight", daynight, NA))
+
+ggplot()+
+  geom_sf(data=world,fill='grey60',col='grey85',linewidth=.1)+
+  geom_path(data=data,aes(x=long,y=lat,group=ID,col=flight.daynight),linewidth=.4)+
+  scale_colour_manual("Solar time (flights)",values=solar.cols,na.value="grey40",na.translate=FALSE)+
+  coord_sf(xlim=longlimits,ylim=latlimits,expand=FALSE)+
+  theme_classic()+
+  theme(panel.background=element_rect(fill='grey85'),legend.position="bottom")+
+  guides(col=guide_legend(override.aes=list(linewidth=2)))+
+  facet_wrap(~age)+
+  xlab("")+ylab("")
+```
+
+Spoonbills migrate mainly **by day**, but many migratory flights continue for several hours after sunset, for example over western France and inland Iberia. Let's look at the speeds over the course of the solar day, with background shading for night (grey), twilight (orange) and day (yellow). Each line connects the hourly speeds of one bird on one date.
+
+```{r}
+#| label: diel-speed
+#| fig-height: 6
+ggplot()+
+  geom_rect(data=suntimes.range,aes(xmin=-Inf,xmax=dawn_earliest,ymin=-Inf,ymax=Inf),fill='grey80',alpha=.5)+
+  geom_rect(data=suntimes.range,aes(xmin=dawn_earliest,xmax=srise_latest,ymin=-Inf,ymax=Inf),fill='orange',alpha=.4)+
+  geom_rect(data=suntimes.range,aes(xmin=srise_latest,xmax=sset_earliest,ymin=-Inf,ymax=Inf),fill='lightgoldenrod2',alpha=.4)+
+  geom_rect(data=suntimes.range,aes(xmin=sset_earliest,xmax=dusk_latest,ymin=-Inf,ymax=Inf),fill='orange',alpha=.4)+
+  geom_rect(data=suntimes.range,aes(xmin=dusk_latest,xmax=Inf,ymin=-Inf,ymax=Inf),fill='grey80',alpha=.5)+
+  geom_path(data=data,aes(x=dt_to_noon,y=spd*3.6,group=paste(ID,date)),linewidth=.2,alpha=.5)+
+  scale_x_continuous(breaks=seq(-12,12,3))+
+  xlab("Time relative to solar noon [h]")+ylab("Speed [km/h]")+
+  theme_classic()+
+  facet_wrap(~age)
+```
+
+How much of their time do the birds spend flying, by day and by night?
+
+```{r}
+#| label: prop-flight
+#| fig-height: 4
+prop.flight <- data %>%
+  group_by(ID, age, daynight) %>%
+  summarise(prop.flight = mean(travel == "flight"), .groups = "drop")
+
+# bars: mean per age group; points: individual birds
+ggplot()+
+  geom_col(data=prop.flight %>% group_by(age,daynight) %>% summarise(prop.flight=mean(prop.flight),.groups="drop"),
+           aes(x=daynight,y=prop.flight,fill=daynight))+
+  geom_point(data=prop.flight,aes(x=daynight,y=prop.flight),position=position_jitter(width=.15,height=0),size=1)+
+  scale_fill_manual(values=solar.cols)+
+  ylab("Proportion of fixes in flight")+xlab("")+
+  theme_classic()+
+  theme(legend.position="none")+
+  facet_wrap(~age)
+```
+
+::: {.intermezzo}
+### Intermezzo 3 – Diel patterns
+
+i. Do the birds fly higher by night than by day? Make boxplots of `alt_msl` for flight fixes per `daynight` class, for adults and juveniles.
+ii. Make the diel speed graph above separately for each month. Do the birds fly at other times of day during migration (September–October) than in August, when most of them are still in the Wadden Sea? *Hint: `facet_grid(mth ~ age)`.*
+iii. **Bonus:** `suntools::solarpos()` gives the elevation of the sun (in degrees) at the exact time of each fix. Calculate it for all fixes and plot speed against sun elevation. What is the advantage of this approach over the four categories?
+:::
+
+```{r}
+#| label: my-intermezzo-3
+#| eval: false
+# Your code here
+
+
+```
+
+
+# PART 4: Annotation with environmental data
+
+Most questions about where and why birds move require environmental information at the bird's location: country, land or sea, land cover, elevation, tides, weather, ... Here we practise the two basic types of annotation:
+
+* **vector data** (polygons, lines, points): which polygon is a fix in?
+* **raster data** (grids): what is the value of the grid cell under a fix?
+
+We use two sources of public data that you can reuse anywhere: Natural Earth and CORINE Land Cover.
+
+## STEP 4.1: Make the fixes spatial
+
+`sf` turns our table into a spatial object. The coordinates are longitude/latitude on the WGS84 datum, which is coordinate reference system (CRS) EPSG:4326.
+
+```{r}
+#| label: make-sf
+pts <- data %>%
+  mutate(fix_id = row_number()) %>%
+  st_as_sf(coords = c("long","lat"), crs = 4326, remove = FALSE)
+
+pts
+```
+
+## STEP 4.2: Countries (Natural Earth, vector data)
+
+`st_join()` adds the attributes of the polygon each point falls in. Points that fall in no country (at sea) get `NA`.
+
+```{r}
+#| label: countries
+# Turn off spherical geometry (s2): for points in polygons, planar calculations in
+# lon/lat are fine and avoid errors with slightly invalid country polygons.
+sf_use_s2(FALSE)
+
+pts.country <- pts %>%
+  st_join(world %>% select(country = admin)) %>%
+  distinct(fix_id, .keep_all = TRUE)   # just in case a point falls in two overlapping polygons
+
+data$country <- pts.country$country
+rm(pts.country)
+
+data %>% count(country, sort = TRUE)
+```
+
+```{r}
+#| label: country-bar
+#| fig-height: 4
+ggplot()+
+  geom_bar(data=data,aes(x=ID,fill=country),position="fill",col="black",linewidth=.1)+
+  scale_fill_viridis_d(option="turbo",na.value="white")+
+  ylab("Proportion of fixes")+xlab("")+
+  theme_classic()+
+  facet_grid(~age,scales="free_x",space="free_x")
+```
+
+The white part (`NA`) is "at sea". A closer look shows that most of those fixes are on the tidal flats of the Wadden Sea and in estuaries and lagoons on the wintering grounds, not at open sea: the 1:50 million country borders are too coarse for coastal birds.
+
+## STEP 4.3: Download more detailed data from Natural Earth
+
+`rnaturalearth` can download many more (and more detailed) layers from [naturalearthdata.com](https://www.naturalearthdata.com/). We download the 1:10 million land polygons once, store them in our environmental data folder, and load them from there afterwards.
+
+```{r}
+#| label: ne-download
+dir.ne <- file.path(dir.env, "naturalearth")
+dir.create(dir.ne, showWarnings = FALSE)
+
+# download only if the file is not there yet
+if(!file.exists(file.path(dir.ne, "ne_10m_land.shp"))){
+  ne_download(scale = 10, type = "land", category = "physical",
+              destdir = dir.ne, load = FALSE)
+}
+if(!file.exists(file.path(dir.ne, "ne_10m_lakes.shp"))){
+  ne_download(scale = 10, type = "lakes", category = "physical",
+              destdir = dir.ne, load = FALSE)
+}
+
+land  <- ne_load(scale = 10, type = "land",  category = "physical", destdir = dir.ne, returnclass = "sf")
+lakes <- ne_load(scale = 10, type = "lakes", category = "physical", destdir = dir.ne, returnclass = "sf")
+
+# crop to our study area to speed up the calculations
+study.box <- st_bbox(c(xmin = longlimits[1], xmax = longlimits[2],
+                       ymin = latlimits[1],  ymax = latlimits[2]), crs = 4326)
+land  <- st_crop(land,  study.box)
+lakes <- st_crop(lakes, study.box)
+```
+
+Is each fix on land or at sea? `st_intersects()` returns, for each point, the land polygon(s) it falls in; a point at sea has none.
+
+```{r}
+#| label: land-sea
+data$on_land <- lengths(st_intersects(pts, land)) > 0
+
+data %>% count(ID, on_land)
+```
+
+```{r}
+#| label: map-wadden-landsea
+#| fig-height: 5
+ggplot()+
+  geom_sf(data=land,fill='grey70',col=NA)+
+  geom_sf(data=lakes,fill='lightblue',col=NA)+
+  geom_point(data=data,aes(x=long,y=lat,col=on_land),size=.3,shape=16)+
+  scale_colour_manual("On land",values=c("TRUE"="darkgreen","FALSE"="navyblue"))+
+  coord_sf(xlim=c(4.5,6.8),ylim=c(52.9,53.65),expand=FALSE)+
+  theme_classic()+
+  theme(panel.background=element_rect(fill='lightblue'))+
+  guides(col=guide_legend(override.aes=list(size=3)))+
+  xlab("")+ylab("")
+```
+
+The coastline is more detailed now, but for a spoonbill the difference between "land" and "sea" is not very informative: the tidal flats, salt marshes and shallow lakes where they forage and roost are all missing. For habitat use at this scale we need land-cover data.
+
+## STEP 4.4: Land cover (CORINE, raster data)
+
+[CORINE Land Cover](https://land.copernicus.eu/en/products/corine-land-cover) (CLC) maps 44 land-cover classes across Europe at 100 m resolution, including *intertidal flats* and *salt marshes*. The full 2018 raster for Europe (200 MB) can be downloaded for free from the Copernicus Land Monitoring Service after registering. For this tutorial we provide a crop of the Dutch Wadden Sea (`CLC2018_WaddenSea_100m.tif`) and a legend table.
+
+```{r}
+#| label: clc-load
+clc <- rast(file.path(dir.env, "CLC2018_WaddenSea_100m.tif"))
+clc.legend <- read_csv(file.path(dir.env, "CLC2018_legend.csv"))
+
+clc
+crs(clc, describe = TRUE)
+```
+
+Note that CLC is not in longitude/latitude, but in the European equal-area projection **EPSG:3035** (coordinates in metres). Before we can extract values, the points must be in the same projection as the raster. We select the fixes in the Wadden Sea and **reproject** them.
+
+```{r}
+#| label: clc-extract
+# area of interest: the Dutch Wadden Sea
+aoi.minlat  <- 52.85
+aoi.maxlat  <- 53.70
+aoi.minlong <- 4.40
+aoi.maxlong <- 6.80
+
+pts.wadden <- pts %>%
+  filter(lat > aoi.minlat, lat < aoi.maxlat, long > aoi.minlong, long < aoi.maxlong) %>%
+  st_transform(crs = crs(clc))
+
+# extract the raster value under each point (terra:: because tidyr also has an extract())
+clc.values <- terra::extract(clc, vect(pts.wadden))
+head(clc.values)
+
+# add the value to the points, and translate values into land-cover labels
+data.wadden <- pts.wadden %>%
+  st_drop_geometry() %>%
+  mutate(value = clc.values[[2]]) %>%
+  left_join(clc.legend, by = "value")
+
+data.wadden %>% count(label3, sort = TRUE)
+```
+
+Where do the spoonbills spend their time in the Wadden Sea, by day and by night? Here we only use "local" fixes (not in flight).
+
+```{r}
+#| label: clc-bar
+#| fig-height: 6
+clc.cols <- setNames(clc.legend$colour, clc.legend$label3)
+
+ggplot()+
+  geom_bar(data=filter(data.wadden,travel=="local"),aes(x=daynight,fill=label3),
+           position="fill",col="black",linewidth=.1)+
+  scale_fill_manual("Land cover",values=clc.cols,na.value="white")+
+  ylab("Proportion of fixes")+xlab("")+
+  theme_classic()+
+  theme(legend.position="bottom")+
+  guides(fill=guide_legend(ncol=3))+
+  facet_wrap(~ID,ncol=5)
+```
+
+Most fixes are on the intertidal flats, by day as well as by night: spoonbills forage on the mudflats around low tide, whatever the time of day. Water bodies, inland marshes and salt marshes are the other main habitats.
+
+### Use versus availability
+
+Spending most time on the intertidal flats does not necessarily mean that spoonbills *prefer* them: there are simply a lot of intertidal flats in the Wadden Sea. To study habitat **selection**, we compare the proportion of fixes in each habitat (**use**) with the proportion of the area covered by that habitat (**availability**).
+
+Two choices determine the outcome:
+
+1. **Which habitats count as available?** We only consider the wetland, water and bare-sand classes as potential spoonbill habitat. **Be aware that this is a choice, and that it ignores some classes that spoonbills do use**: as the bar chart above shows, some fixes fall on arable land, natural grasslands, pastures or 'sport and leisure facilities'. Some of these fixes are real (spoonbills sometimes rest or forage in wet grasslands and ditches), others result from the coarse 100 m resolution of CORINE, where a fix on a narrow salt marsh or creek is assigned to the neighbouring class. Leaving these classes out removes those fixes from the analysis, and makes the result conditional on our definition of habitat.
+2. **Which area is available?** Here: the whole crop of the Dutch Wadden Sea (`aoi`). A bigger or smaller area changes the availability, and with it the result.
+
+```{r}
+#| label: use-availability
+#| fig-height: 4.5
+# CLC classes that count as potential spoonbill habitat
+habitat.codes <- c(331,          # beaches, dunes, sands (sandbanks used as roosts)
+                   411, 412,     # inland marshes, peat bogs
+                   421, 422, 423,# salt marshes, salines, intertidal flats
+                   511, 512,     # water courses, water bodies
+                   521, 522)     # coastal lagoons, estuaries
+
+# How many 'local' fixes do we ignore by leaving out the other classes?
+data.wadden %>%
+  filter(travel == "local") %>%
+  mutate(in.habitat = clc_code %in% habitat.codes) %>%
+  count(in.habitat, label3) %>%
+  filter(!in.habitat) %>%
+  mutate(prop.of.all.local.fixes = n/sum(data.wadden$travel == "local")) %>%
+  arrange(desc(n))
+
+# AVAILABILITY: number of 100 x 100 m cells of each class in the raster
+avail <- freq(clc) %>%
+  as_tibble() %>%
+  select(value, n.cells = count) %>%
+  left_join(clc.legend, by = "value") %>%
+  filter(clc_code %in% habitat.codes) %>%
+  mutate(available = n.cells/sum(n.cells))
+
+# USE: number of 'local' fixes (not in flight) in each class
+use <- data.wadden %>%
+  filter(travel == "local", clc_code %in% habitat.codes) %>%
+  count(clc_code, name = "n.fixes") %>%
+  mutate(used = n.fixes/sum(n.fixes))
+
+use.avail <- avail %>%
+  left_join(use, by = "clc_code") %>%
+  mutate(n.fixes = replace_na(n.fixes, 0),
+         used    = replace_na(used, 0),
+         selection.ratio = used/available)   # > 1: used more than available
+
+use.avail %>% select(label3, n.cells, available, n.fixes, used, selection.ratio)
+
+# plot use and availability side by side
+use.avail %>%
+  select(label3, available, used) %>%
+  pivot_longer(c(available, used), names_to = "what", values_to = "proportion") %>%
+  ggplot()+
+  geom_col(aes(x=reorder(label3,proportion),y=proportion,fill=what),position="dodge")+
+  scale_fill_manual("",values=c("available"="grey70","used"="darkgreen"))+
+  coord_flip()+
+  xlab("")+ylab("Proportion")+
+  theme_classic()
+```
+
+The **selection ratio** (use divided by availability) summarises this: above 1, a habitat is used more than expected from its availability; below 1, less. A log scale makes ratios of 2 and 1/2 equally far from 1.
+
+```{r}
+#| label: selection-ratio
+#| fig-height: 3.5
+ggplot()+
+  geom_col(data=filter(use.avail,used>0),aes(x=reorder(label3,selection.ratio),y=selection.ratio),fill="darkgreen")+
+  geom_hline(yintercept=1,linetype="dashed")+
+  scale_y_log10()+
+  coord_flip()+
+  xlab("")+ylab("Selection ratio (used / available, log scale)")+
+  theme_classic()
+```
+
+Within the Wadden Sea, the spoonbills use salt marshes and inland marshes about twice as much as expected from their availability, and the intertidal flats slightly more. Open water bodies (which include large lakes such as the Lauwersmeer and part of the IJsselmeer within our crop) and beaches are used less than available. Remember that these results only hold for our definition of available habitat: about 12% of the local fixes, in classes such as arable land, grassland and pastures, were left out. This is also a simple, population-level analysis: each fix counts as an independent observation, and all birds are pooled. In proper resource-selection analyses, availability is defined per individual (e.g. within its home range) and individual variation is taken into account.
+
+A map of land cover with the spoonbill fixes on top: `tidyterra::geom_spatraster()` plots terra rasters in ggplot2. We first attach the labels to the raster values so the legend shows land-cover names.
+
+```{r}
+#| label: clc-map
+#| fig-height: 7
+levels(clc) <- clc.legend %>% transmute(value = as.integer(value), label3) %>% as.data.frame()
+
+map.clc <- ggplot()+
+  geom_spatraster(data=clc)+
+  scale_fill_manual("Land cover",values=clc.cols,na.value="transparent",na.translate=FALSE)+
+  geom_sf(data=pts.wadden,col="black",size=.1,shape=16,alpha=.3)+
+  theme_classic()+
+  theme(legend.position="bottom",legend.text=element_text(size=7))+
+  guides(fill=guide_legend(ncol=3))
+
+map.clc
+
+ggsave(file.path(dir.out, "maps", "Map_WaddenSea_CLC2018_fixes.png"), map.clc,
+       width = 26, height = 20, units = "cm", dpi = 300)
+```
+
+## STEP 4.5 (optional): Satellite imagery
+
+`maptiles` downloads map tiles, including satellite imagery, for any area. This needs an internet connection and can take a while at high zoom levels, so this chunk is not run when you render the document (`eval: false`). Run it yourself, chunk by chunk. The example zooms in on Griend, where three of the juveniles hatched.
+
+```{r}
+#| label: satellite
+#| eval: false
+box.griend <- st_bbox(c(xmin = 5.0, xmax = 5.6, ymin = 53.15, ymax = 53.35), crs = 4326)
+
+tile.griend <- get_tiles(box.griend, provider = "Esri.WorldImagery", crop = TRUE, zoom = 12)
+
+ggplot()+
+  geom_spatraster_rgb(data=tile.griend)+
+  geom_point(data=data,aes(x=long,y=lat,fill=ID),size=.6,shape=21,stroke=.05,col='black')+
+  scale_fill_viridis_d(option="turbo")+
+  coord_sf(xlim=c(5.0,5.6),ylim=c(53.15,53.35),expand=FALSE)+
+  theme_classic()+
+  theme(legend.position="bottom")
+```
+
+::: {.intermezzo}
+### Intermezzo 4 – Environmental annotation
+
+i. 44 land-cover classes is a lot. Redo the bar chart of habitat use by day and night with the coarser classes in `label2` (or `label1`) of the legend table, and compare adults with juveniles.
+ii. In which countries are the birds at the end of their track? Find, for each bird, the country (`country`) of its last fix. *Hint: `slice_max(dt)`.*
+iii. Download another Natural Earth layer with `ne_download()`, for example rivers (`type = "rivers_lake_centerlines"`), and add it to a map of the tracks.
+iv. Repeat the use-versus-availability analysis separately for adults and juveniles, or for day and night. Are the patterns the same? *Hint: add `age` (or `daynight`) to `count()` and calculate `used` within each group.*
+v. **Think ahead:** the CLC crop only covers the Wadden Sea. Which other areas used by these birds would you need, and which of them are outside the coverage of CORINE (Europe only)? Which global land-cover products could you use instead?
+:::
+
+```{r}
+#| label: my-intermezzo-4
+#| eval: false
+# Your code here
+
+
+```
+
+
+# PART 5: Save your outputs
+
+Save the cleaned and annotated data, so you (and your group) can continue from here without re-running everything. Compressed `.csv.gz` files are small and can be read by any software.
+
+```{r}
+#| label: save-outputs
+write_csv(data, file.path(dir.out, "tables", "Spoonbills_cleaned-annotated_1h.csv.gz"))
+write_csv(data.wadden, file.path(dir.out, "tables", "Spoonbills_WaddenSea_CLC2018.csv.gz"))
+write_csv(filter.log, file.path(dir.out, "tables", "Spoonbills_filter-log.csv"))
+
+knitr::kable(filter.log)
+```
+
+
+# Towards the rest of the week: data straight from Movebank
+
+So far we worked with files downloaded from the course's Google Drive. During the rest of the week you will download data from Movebank yourself. The `move2` package does this directly from R. You need a (free) Movebank account, and for many studies you must first accept the data owner's licence terms on the Movebank website. You can only download studies to which the owners have given you (or everyone) access.
+
+The code below shows how the workshop data could be downloaded straight from Movebank, *if* you have access to the SPOONBILL_WAAKVOGELS study (Movebank ID 2788432319). Replace the study ID and dates for your own projects.
+
+```{r}
+#| label: move2
+#| eval: false
+library(move2)
+
+# store your Movebank password safely in your computer's keyring (once)
+movebank_store_credentials("your_movebank_username")
+
+# list all studies you can see, and the ones you are allowed to download
+studies <- movebank_download_study_info()
+studies %>%
+  filter(i_have_download_access) %>%
+  select(id, name, taxon_ids, sensor_type_ids, license_type)
+
+# reference data (one row per deployment) of the study
+meta <- movebank_download_deployment(study_id = 2788432319)
+
+# GPS data of the study for a chosen period
+tracks <- movebank_download_study(study_id        = 2788432319,
+                                  sensor_type_id  = "gps",
+                                  timestamp_start = as.POSIXct("2023-08-01", tz = "UTC"),
+                                  timestamp_end   = as.POSIXct("2024-01-01", tz = "UTC"))
+
+# move2 returns an sf object; turn it into a plain table with long and lat columns
+tracks <- tracks %>%
+  filter(!st_is_empty(.)) %>%          # drop records without a position
+  mutate(long = st_coordinates(.)[, 1],
+         lat  = st_coordinates(.)[, 2]) %>%
+  st_drop_geometry()
+```
+
+From here, the steps of Parts 1–5 apply: standardise the column names, join the reference data, filter, resample, calculate movement statistics, classify solar periods and annotate. Expect to adapt each step to your own data: other column names, other sampling schedules, other thresholds.
+
+::: {.intermezzo}
+### Final intermezzo – A checklist for your own data
+
+Before you start analysing a new tracking dataset, answer these questions (in code!):
+
+1. How many individuals, tags and deployments are there, and over which period? Which age classes?
+2. What is the sampling schedule (intervals between fixes)? Does it change over time or between tags? To which interval will you resample?
+3. Which quality information is available (satellites, HDOP, Movebank outlier flags), and how many fixes does each filter remove?
+4. Which speed threshold is realistic for your species?
+5. Which environmental data do you need, at which resolution, and in which projection?
+:::
+
+```{r}
+#| label: session-info
+sessionInfo()
+```
